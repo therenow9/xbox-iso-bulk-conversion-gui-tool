@@ -14,12 +14,14 @@ public sealed partial class MainForm : Form
     private readonly ConcurrentQueue<string> _logQueue = new();
     private readonly System.Windows.Forms.Timer _logTimer;
     private readonly Font _boldFont;
+    private readonly SourceWatcher _watcher = new();
 
     private string? _scriptPath;
     private CancellationTokenSource? _cts;
     private bool _busy;
     private RunMode _mode = RunMode.Scan;
     private bool _suspendCheckTracking;
+    private bool _rescanWhenIdle;
 
     private int _tallyOk, _tallySkipped, _tallyFailed, _tallyNotXbox;
     private ConverterEvent? _summary;
@@ -53,6 +55,13 @@ public sealed partial class MainForm : Form
 
         _chkShowLog.CheckedChanged += (_, _) => _split.Panel2Collapsed = !_chkShowLog.Checked;
 
+        // Force changes what a scan reports - everything becomes ToDo - so the list
+        // should show that straight away rather than after a manual refresh.
+        _chkForce.CheckedChanged += async (_, _) =>
+        {
+            if (!_busy && _scriptPath is not null && PathsUsable()) await RefreshListAsync();
+        };
+
         _grid.CellFormatting += OnCellFormatting;
         _grid.CurrentCellDirtyStateChanged += (_, _) =>
         {
@@ -62,6 +71,9 @@ public sealed partial class MainForm : Form
 
         // Space toggles the checkbox on every selected row - handy after a sort.
         _grid.KeyDown += OnGridKeyDown;
+
+        // Raised on a timer thread once the source folder has gone quiet.
+        _watcher.Settled += OnSourceSettled;
 
         FormClosing += OnFormClosing;
     }
@@ -168,11 +180,12 @@ public sealed partial class MainForm : Form
         // Everything is already configured from last time, so show the user their
         // library rather than an empty grid.
         if (PathsUsable()) await RefreshListAsync();
+        StartWatching();
     }
 
     // ----------------------------------------------------------------- browse --
 
-    private void BrowseForTool()
+    private async Task BrowseForTool()
     {
         using var dialog = new OpenFileDialog
         {
@@ -184,11 +197,10 @@ public sealed partial class MainForm : Form
         else if (Directory.Exists(_txtTool.Text)) dialog.InitialDirectory = _txtTool.Text;
 
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        SetPath(_txtTool, dialog.FileName);
-        ValidatePaths();
+        await ApplyPathChange(_txtTool, dialog.FileName);
     }
 
-    private void BrowseForFolder(TextBox target, string description)
+    private async Task BrowseForFolder(TextBox target, string description)
     {
         using var dialog = new FolderBrowserDialog
         {
@@ -199,8 +211,75 @@ public sealed partial class MainForm : Form
         if (Directory.Exists(target.Text)) dialog.SelectedPath = target.Text;
 
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        SetPath(target, dialog.SelectedPath);
+        await ApplyPathChange(target, dialog.SelectedPath);
+    }
+
+    /// <summary>
+    /// Applies a newly chosen path and re-scans. Picking a different source folder and
+    /// still being shown the old folder's games is just wrong, and all three paths feed
+    /// the scan: the tool runs it, the source is what gets listed, and the output is
+    /// what decides which rows come back Skipped.
+    /// </summary>
+    private async Task ApplyPathChange(TextBox target, string value)
+    {
+        if (string.Equals(target.Text, value, StringComparison.OrdinalIgnoreCase))
+        {
+            ValidatePaths();
+            return;
+        }
+
+        SetPath(target, value);
         ValidatePaths();
+
+        if (ReferenceEquals(target, _txtSource)) StartWatching();
+        if (!_busy && _scriptPath is not null && PathsUsable()) await RefreshListAsync();
+    }
+
+    /// <summary>
+    /// Points the watcher at the current source folder and reports honestly when that
+    /// is not possible, so nobody sits waiting for an automatic refresh that will
+    /// never come.
+    /// </summary>
+    private void StartWatching()
+    {
+        _watcher.Watch(_txtSource.Text);
+
+        var watching = _watcher.IsActive;
+        _tips.SetToolTip(_btnRefresh, watching
+            ? "Re-scan the source folder. New images are picked up automatically, so this is " +
+              "mainly for when you have changed the output folder outside the app."
+            : "Re-scan the source folder. This folder cannot be watched for changes, so new " +
+              "images will not appear on their own - use this button.");
+
+        if (!watching && Directory.Exists(_txtSource.Text))
+        {
+            QueueLog("This source folder cannot be watched for changes (common on network shares).");
+            QueueLog("New images will not appear on their own - use Refresh list.");
+        }
+    }
+
+    /// <summary>
+    /// A new image finished landing in the source folder, so bring the list up to date
+    /// without the user having to ask. Deferred while a conversion is running - the
+    /// grid is being driven by that run's event stream and must not be rebuilt underneath it.
+    /// </summary>
+    private void OnSourceSettled()
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+
+        try
+        {
+            BeginInvoke(new Action(async () =>
+            {
+                if (_busy) { _rescanWhenIdle = true; return; }
+                if (_scriptPath is null || !PathsUsable()) return;
+
+                QueueLog("Source folder changed - refreshing the list.");
+                await RefreshListAsync();
+            }));
+        }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
     }
 
     // ------------------------------------------------------------- validation --
@@ -370,6 +449,15 @@ public sealed partial class MainForm : Form
         SetRunningState(false);
         UpdateButtons();
         UpdateSelectionLabel();
+
+        // Images that arrived mid-run were held back until now.
+        if (_rescanWhenIdle && _mode == RunMode.Convert && _scriptPath is not null && PathsUsable())
+        {
+            _rescanWhenIdle = false;
+            QueueLog("Source folder changed during the run - refreshing the list.");
+            await RefreshListAsync();
+        }
+        _rescanWhenIdle = false;
     }
 
     private void FinishRun(RunOptions options, RunResult result)
@@ -875,6 +963,7 @@ public sealed partial class MainForm : Form
         }
 
         _logTimer.Stop();
+        _watcher.Dispose();
         CaptureSettings();
         _settings.Save();
     }
@@ -884,6 +973,7 @@ public sealed partial class MainForm : Form
         if (disposing)
         {
             _logTimer.Dispose();
+            _watcher.Dispose();
             _boldFont.Dispose();
             _tips.Dispose();
             _cts?.Dispose();

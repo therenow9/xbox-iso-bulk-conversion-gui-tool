@@ -86,9 +86,9 @@ public sealed partial class MainForm
         AddPathRow(panel, 1, "Source folder", out _txtSource, out _btnSourceBrowse, out _lblSourceWarn);
         AddPathRow(panel, 2, "Output folder", out _txtOutput, out _btnOutputBrowse, out _lblOutputWarn);
 
-        _btnToolBrowse.Click += (_, _) => BrowseForTool();
-        _btnSourceBrowse.Click += (_, _) => BrowseForFolder(_txtSource, "Pick the folder holding your .iso images");
-        _btnOutputBrowse.Click += (_, _) => BrowseForFolder(_txtOutput, "Pick the folder to extract game folders into");
+        _btnToolBrowse.Click += async (_, _) => await BrowseForTool();
+        _btnSourceBrowse.Click += async (_, _) => await BrowseForFolder(_txtSource, "Pick the folder holding your .iso images");
+        _btnOutputBrowse.Click += async (_, _) => await BrowseForFolder(_txtOutput, "Pick the folder to extract game folders into");
 
         return panel;
     }
