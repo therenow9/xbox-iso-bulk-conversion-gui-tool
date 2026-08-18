@@ -1,0 +1,180 @@
+name: Release
+
+# Tag a commit to publish:
+#     git tag v1.0.0 && git push origin v1.0.0
+#
+# Or run it by hand from the Actions tab, which produces a draft you can review
+# before anyone sees it.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the leading v (e.g. 1.0.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Publish as a draft'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write        # needed to create the release
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.event_name }}' -eq 'push') {
+            '${{ github.ref_name }}' -replace '^v', ''
+          } else {
+            '${{ inputs.version }}'
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+') {
+            throw "Version '$version' is not major.minor.patch. Tag as v1.0.0, not v1.0."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Building version $version"
+
+      - name: Build
+        run: dotnet build XisoConverter.sln -c Release --nologo
+
+      # extract-xiso is not committed to this repo. It is fetched from its own
+      # project at a pinned version, together with the LICENSE.TXT that its 4-clause
+      # BSD terms require to travel with any redistributed binary.
+      - name: Fetch extract-xiso
+        run: ./tools/Get-ExtractXiso.ps1
+        shell: pwsh
+
+      - name: Test the engine
+        run: ./tools/Invoke-Tests.ps1
+        shell: pwsh
+
+      - name: Build the release drop
+        run: ./build.ps1 -BundleTool -Zip -Version ${{ steps.version.outputs.version }}
+        shell: pwsh
+
+      # A release that quietly lost its licence file, or its engine, would be worse
+      # than no release at all.
+      - name: Verify the drop
+        shell: pwsh
+        run: |
+          $drop = 'dist/XisoConverter'
+          $required = @(
+            'XisoConverter.exe'
+            'convert-xiso.ps1'
+            'README.md'
+            'LICENSE'
+            'THIRD-PARTY-NOTICES.md'
+            'extract-xiso/extract-xiso.exe'
+            'extract-xiso/LICENSE.TXT'
+          )
+          $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $drop $_)) })
+          if ($missing) { throw "Release drop is missing: $($missing -join ', ')" }
+
+          $exe = Get-Item (Join-Path $drop 'XisoConverter.exe')
+          Write-Host "XisoConverter.exe $($exe.VersionInfo.FileVersion), $('{0:N1} MB' -f ($exe.Length / 1MB))"
+          Get-ChildItem $drop -Recurse -File | ForEach-Object { "  $($_.FullName.Substring((Resolve-Path $drop).Path.Length + 1))" }
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $tag = if ('${{ github.event_name }}' -eq 'push') { '${{ github.ref_name }}' } else { "v$version" }
+          $zip = "dist/XisoConverter-$version.zip"
+          if (-not (Test-Path -LiteralPath $zip)) { throw "Expected $zip" }
+
+          # Taken from the drop rather than hardcoded, so the notes can never claim a
+          # version that is not the one actually inside the zip.
+          $xiso = (Get-Content -LiteralPath 'dist/XisoConverter/extract-xiso/VERSION.txt' -Raw).Trim()
+
+          # "the latest release" is only claimed when it is actually true. Asking
+          # upstream keeps that honest without anyone having to remember to check.
+          $latest = ''
+          try {
+            $latest = (Invoke-RestMethod -Uri 'https://api.github.com/repos/XboxDev/extract-xiso/releases/latest' `
+                        -Headers @{ 'User-Agent' = 'xiso-converter-release' }).tag_name
+          } catch {
+            Write-Host "::warning::Could not reach the extract-xiso releases API: $($_.Exception.Message)"
+          }
+
+          if ($latest -and $latest -ne $xiso) {
+            Write-Host "::warning::Bundled extract-xiso is $xiso but upstream latest is $latest. Bump the pinned tag in tools/Get-ExtractXiso.ps1."
+            $xisoDesc = "**$xiso** of"
+            $xisoNote = "> Upstream has since published ``$latest``. This release predates it."
+          } else {
+            $xisoDesc = "**$xiso** - the latest release of"
+            $xisoNote = ''
+          }
+
+          # Single-quoted here-string: in a double-quoted one PowerShell would eat the
+          # backticks as escape characters and mangle every code span.
+          $notes = @'
+          ## XISO Converter {VERSION}
+
+          Download `XisoConverter-{VERSION}.zip`, unzip it anywhere, and run `XisoConverter.exe`.
+          Nothing to install: the app is self-contained and `extract-xiso` is bundled, so it
+          works out of the box.
+
+          See `README.md` inside the zip for the full manual.
+
+          ### First run: Windows will warn you
+
+          The download is not code-signed, so SmartScreen shows **"Windows protected your PC"**.
+          That is a reputation warning, not a detection — click **More info** then **Run anyway**.
+
+          If Windows blocks it more stubbornly, right-click the **zip** before extracting →
+          **Properties** → tick **Unblock** → OK, then extract again. Windows tags downloaded
+          files, and that tag is inherited by everything extracted from them.
+
+          Signing requires a paid certificate, which this project does not have. If you would
+          rather not take the binary on trust, the source is here and
+          `.github/workflows/release.yml` shows exactly how this zip was built — you can build
+          it yourself with `./build.ps1 -BundleTool`.
+
+          ---
+
+          This product includes software developed by in <in@fishtank.com>.
+
+          ### Bundled extract-xiso
+
+          This release bundles {XISO_DESC}
+          [XboxDev/extract-xiso](https://github.com/XboxDev/extract-xiso) at the time it was
+          built, unmodified and under its own 4-clause BSD licence (included as
+          `extract-xiso/LICENSE.TXT`).
+
+          {XISO_NOTE}
+
+          - Source: **https://github.com/XboxDev/extract-xiso**
+          - Newest upstream build: **https://github.com/XboxDev/extract-xiso/releases/latest**
+
+          You can always point the app at your own copy instead.
+
+          Full attribution is in `THIRD-PARTY-NOTICES.md`.
+          '@
+          $notes = $notes.Replace('{VERSION}', $version).
+                            Replace('{XISO_DESC}', $xisoDesc).
+                            Replace('{XISO_NOTE}', $xisoNote)
+
+          $draft = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.draft }}' -eq 'true') { '--draft' } else { '' }
+
+          # Not $args - that is an automatic variable in PowerShell.
+          $ghArgs = @('release', 'create', $tag, $zip, '--title', "XISO Converter $version", '--notes', $notes)
+          if ($draft) { $ghArgs += $draft }
+          & gh @ghArgs

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build XisoConverter.sln -c Release --nologo
+
+      # Fetched here as well as in the release job, so the bundled binary and its
+      # licence are proven to be reachable before a tag depends on it.
+      - name: Fetch extract-xiso
+        run: ./tools/Get-ExtractXiso.ps1
+        shell: pwsh
+
+      - name: Test the engine
+        run: ./tools/Invoke-Tests.ps1
+        shell: pwsh
+
+      - name: Build the release drop
+        run: ./build.ps1 -BundleTool -Zip
+        shell: pwsh
+
+      - name: Upload drop
+        uses: actions/upload-artifact@v4
+        with:
+          name: XisoConverter-ci
+          path: dist/XisoConverter/
+          if-no-files-found: error

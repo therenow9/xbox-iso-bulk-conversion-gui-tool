@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>XisoConverter</AssemblyName>
+    <RootNamespace>XisoConverterGui</RootNamespace>
+    <AssemblyTitle>XISO Converter</AssemblyTitle>
+    <Description>Bulk-converts Original Xbox XISO images into FATX-safe extracted game folders.</Description>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <ApplicationUseCompatibleTextRendering>false</ApplicationUseCompatibleTextRendering>
+  </PropertyGroup>
+
+  <!-- Release layout: one self-contained .exe with no runtime prerequisite. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- ApplicationIcon covers Explorer and the taskbar; the same file is embedded so
+       the window itself can use it instead of the stock WinForms glyph. -->
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" LogicalName="XisoConverterGui.app.ico" />
+  </ItemGroup>
+
+  <!-- The engine ships next to the .exe. The GUI shells out to it and never
+       reimplements any of its naming or extraction rules. The user manual ships
+       alongside both, so a publish on its own is a complete drop. -->
+  <ItemGroup>
+    <Content Include="..\..\convert-xiso.ps1" Link="convert-xiso.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="..\..\release\README.md" Link="README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+
+</Project>

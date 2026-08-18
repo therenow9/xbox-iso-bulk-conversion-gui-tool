@@ -1,0 +1,8 @@
+bin/
+obj/
+dist/
+*.user
+.vs/
+
+# Fetched at build time by tools/Get-ExtractXiso.ps1, never committed.
+third-party/extract-xiso/
