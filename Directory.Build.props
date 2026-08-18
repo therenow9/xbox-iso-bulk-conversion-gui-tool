@@ -1,0 +1,23 @@
+<Project>
+
+  <!-- Shared by every project in the repo. -->
+  <PropertyGroup>
+    <Product>XISO Converter</Product>
+    <Company>JES Technologies</Company>
+    <Authors>JES Technologies</Authors>
+    <Copyright>Copyright (c) 2026 JES Technologies</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NeutralLanguage>en</NeutralLanguage>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Deterministic>true</Deterministic>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+  </PropertyGroup>
+
+</Project>

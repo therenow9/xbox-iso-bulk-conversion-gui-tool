@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>fake-extract-xiso</AssemblyName>
+    <RootNamespace>FakeExtractXiso</RootNamespace>
+    <AssemblyTitle>Fake extract-xiso</AssemblyTitle>
+    <Description>Test stub standing in for extract-xiso.exe.</Description>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- A test stub is never part of a release, so it stays framework-dependent. -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+</Project>
