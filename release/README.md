@@ -82,12 +82,31 @@ changes, the warning goes away.
 2. **Source folder** — where your `.iso` / `.xiso` files live.
 3. **Output folder** — where extracted game folders should go.
 
-The list fills in automatically. Each row shows the ISO, its size, and the folder name
-the converter will create. **A folder name in bold amber means it was changed** to
-survive the Xbox filesystem — that is the point of this tool, and seeing
+The list fills in as soon as those three are set. Each row shows the ISO, its size, and
+the folder name the converter will create. **A folder name in bold amber means it was
+changed** to survive the Xbox filesystem — that is the point of this tool, and seeing
 `Thing, The (USA).iso → Thing The (USA)` is the reassurance you want.
 
 Tick the rows you want and press **Convert**. New images are ticked for you by default.
+
+### The list keeps itself up to date
+
+Leave the app open while downloads finish. New images appear in the list on their own —
+no button to press.
+
+It deliberately waits until a download is **completely finished** before adding it: a
+file still being written is a partial image, and reading one would fail the Xbox
+signature check and wrongly label your new game `NotXbox`. So expect a few seconds
+between the download completing and the row appearing. Nothing is added mid-download.
+
+**Refresh list** is still there for the two cases this cannot cover:
+
+- You added or deleted extracted game folders **in the output folder** outside the app,
+  so `Skipped` and `ToDo` are out of date. Only the source folder is watched.
+- Your source folder **cannot be watched** — common on network shares and NAS drives,
+  where Windows may never report changes. The app says so in the log when this happens,
+  and the Refresh tooltip changes to match, so you are never left waiting for a refresh
+  that will not come.
 
 ### The statuses
 
@@ -201,3 +220,7 @@ the summary dialog carry the exact error text.
 
 **Nothing appears in the list** — the source folder needs `.iso` or `.xiso` files
 directly inside it. Subfolders aren't searched.
+
+**A new download hasn't shown up** — give it a few seconds; the list waits until the
+file has finished being written. If it never appears, check the log pane: on a network
+share Windows may not report changes at all, in which case press **Refresh list**.

@@ -108,6 +108,7 @@ dist\XisoConverter\
     XisoConverter.exe          self-contained, no runtime prerequisite
     convert-xiso.ps1           the engine, must stay beside the .exe
     README.md                  the user manual
+    LICENSE                    MIT
     THIRD-PARTY-NOTICES.md     licences and attribution
     extract-xiso\
         extract-xiso.exe       bundled unmodified
@@ -141,8 +142,8 @@ Releases are built and published by GitHub Actions
 ([.github/workflows/release.yml](.github/workflows/release.yml)):
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 The workflow builds, fetches the pinned extract-xiso, runs the test suite, produces the
@@ -156,7 +157,10 @@ every push and pull request, and uploads the drop as an artifact.
 
 Bumping the bundled extract-xiso is a one-line change: the pinned tag lives at the top
 of [tools/Get-ExtractXiso.ps1](tools/Get-ExtractXiso.ps1). It is deliberately pinned
-rather than tracking latest, so a rebuild of an old tag produces the same bytes.
+rather than tracking latest, so a rebuild of an old tag produces the same bytes — but
+the fetch script checks the upstream API on every run and warns when the pin has fallen
+behind, so "we bundle the latest extract-xiso" cannot quietly rot into a false claim.
+The check is best-effort and never fails the build, so offline builds still work.
 
 **Releases are unsigned.** SmartScreen will show "Windows protected your PC" on first
 run, and self-contained single-file .NET binaries are a common source of antivirus false
@@ -188,6 +192,7 @@ xbox-iso-bulk-conversion-gui-tool/
 │       ├── app.ico
 │       ├── Engine/
 │       │   ├── ConverterRunner.cs  launches the script, streams stdout, kills the tree on cancel
+│       │   ├── SourceWatcher.cs    reports new images once they have finished downloading
 │       │   └── ConverterEvent.cs   one NDJSON line off the wire
 │       ├── Model/
 │       │   ├── GameRow.cs          row state, FATX rename detection, size/duration formatting
@@ -222,6 +227,23 @@ onto the UI thread with `BeginInvoke`. The log pane is capped at 400 000 charact
 true)`. The script's `.partial` design means a killed run can't leave a folder that
 looks finished; the GUI then deletes any `<Output>\*.partial` left behind and marks the
 interrupted row `Cancelled`.
+
+**Keeping the list current.** [SourceWatcher.cs](src/XisoConverterGui/Engine/SourceWatcher.cs)
+watches the source folder so new images appear without the Refresh button. The subtlety
+it exists for: a download in progress is a partial file, and `FileSystemWatcher` fires
+the instant a `.iso` appears — at zero bytes. Rescanning then would read a truncated
+image, fail the media-signature check, and label a brand new game `NotXbox`. So a change
+is only reported once every file it saw has stopped growing for three seconds *and* can
+be opened without a sharing violation, plus two seconds of folder quiet to coalesce a
+batch of arrivals. A stalled download is dropped after ten minutes so one dead file
+cannot block the list forever, and rescans are deferred while a conversion is running
+rather than rebuilding the grid under the event stream driving it.
+
+The output folder is deliberately *not* watched: our own conversions write there
+constantly, so it would fire a rescan after every run and wipe the `OK`/`Failed`
+statuses just earned. That, plus folders that cannot be watched at all (common over
+SMB), is why Refresh still exists — and when watching is unavailable the app says so in
+the log instead of leaving you waiting.
 
 **Grid.** Unbound `DataGridView`, so column sorting comes for free. Size and Time cells
 hold `long`/`double` and are humanised in `CellFormatting`, which keeps sorting numeric
